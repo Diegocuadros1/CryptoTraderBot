@@ -16,20 +16,20 @@ rate_limit = asyncio.Semaphore(10) # Allow only 10 concurrent subscriptions per 
 # http_client = Client("https://api.mainnet-beta.solana.com")
     
 async def subscribe(id, pubkey, websocket):
-    async with rate_limit:  
-        subscription_payload = {
-            "jsonrpc": "2.0",
-            "id": id,
-            "method": "accountSubscribe",
-            "params": [
-                pubkey,
-                {
-                    "encoding": "jsonParsed"
-                }
-            ]
-        }
-        await websocket.send(JSON.stringify(subscription_payload))
+    subscription_payload = {
+        "jsonrpc": "2.0",
+        "id": id,
+        "method": "accountSubscribe",
+        "params": [
+            pubkey,
+            {
+                "encoding": "jsonParsed"
+            }
+        ]
+    }
 
+    async with rate_limit:  
+        await websocket.send(JSON.dumps(subscription_payload))
         await asyncio.sleep(6)  # 60 seconds / 10 requests
 
 
@@ -41,20 +41,26 @@ async def subscribe_to_wallets(wallets, websocket):
 
 
 async def monitor_wallets(wallets):
-    async with websockets.connect(ws_url) as websocket:
-        print("Connected to WebSocket.")
+    while True:
+        try:
+            async with websockets.connect(ws_url) as websocket:
+                print("Connected to WebSocket.")
+                await subscribe_to_wallets(wallets, websocket) # Subscribe to wallets with a certain rate limit
 
-        await subscribe_to_wallets(wallets, websocket) # Subscribe to wallets with a certain rate limit
+                while True:
+                    message = await websocket.recv()
+                    print("message: " + str(message))
+                    print("Time: " + str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
 
-        while True:
-            try:
-                message = await websocket.recv()
-                print("message: " + str(message))
-                print("Time: " + str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+        except websockets.ConnectionClosed as e:
+            print(f"Connection closed: {e}. Retrying in 5 seconds...")
+            await asyncio.sleep(5)
+        except Exception as e:
+            print(f"Unexpected error: {e}. Retrying in 5 seconds...")
+            await asyncio.sleep(5)
+      
 
-            except Exception as e:
-                print(f"Time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}. Error: {e}")
-                break
+        
 async def main():
 
     #access wallets from txt file and add them to a list
@@ -68,7 +74,15 @@ async def main():
             except:
                 print("error: " + line)
     
-    await monitor_wallets(wallets)
+    if not wallets:
+        print("No wallets found in the file. Exiting...")
+        return
+    try:
+        await monitor_wallets(wallets)
+    except KeyboardInterrupt:
+        print("Shutting down gracefully...")
+    except Exception as e:
+        print(f"Error in main: {e}")
 
 
 asyncio.run(main())
