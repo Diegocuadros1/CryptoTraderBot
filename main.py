@@ -2,18 +2,15 @@ import time
 import datetime
 import asyncio
 import os
-import dotenv
 import asyncio
 import websockets
 import json as JSON
+from find_transaction import find_transaction
 
-dotenv.load_dotenv()
 
-API_KEY = os.getenv("API_KEY")
-ws_url = f"wss://mainnet.helius-rpc.com/?api-key={API_KEY}"
+ws_url = "wss://rpc-proxy.cuadrosda21.workers.dev"
 rate_limit = asyncio.Semaphore(10) # Allow only 10 concurrent subscriptions per minute
-
-# http_client = Client("https://api.mainnet-beta.solana.com")
+ 
     
 async def subscribe(id, pubkey, websocket):
     subscription_payload = {
@@ -30,8 +27,22 @@ async def subscribe(id, pubkey, websocket):
 
     async with rate_limit:  
         await websocket.send(JSON.dumps(subscription_payload))
-        await asyncio.sleep(6)  # 60 seconds / 10 requests
 
+async def send_pings(websocket):
+    """Send periodic pings to keep the connection alive."""
+    while True:
+        try:
+            await websocket.ping()
+            print(f"Ping sent at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            await asyncio.sleep(60)  # Send ping every 20 seconds
+        except Exception as e:
+            print(f"Error sending ping: {e}")
+            break
+
+async def get_block_data(wallet, slot):
+    
+    print("getting block data", wallet, slot)
+    pass
 
 async def subscribe_to_wallets(wallets, websocket):
     tasks = []
@@ -40,20 +51,41 @@ async def subscribe_to_wallets(wallets, websocket):
     await asyncio.gather(*tasks)
 
 
+    
+
 async def monitor_wallets(wallets):
     while True:
         try:
             async with websockets.connect(ws_url) as websocket:
                 print("Connected to WebSocket.")
+
+                ping_task = asyncio.create_task(send_pings(websocket))
+
                 await subscribe_to_wallets(wallets, websocket) # Subscribe to wallets with a certain rate limit
 
+                results = {}
                 while True:
                     message = await websocket.recv()
-                    print("message: " + str(message))
+                    message = JSON.loads(message)
                     print("Time: " + str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+
+                    #if the account is an notification, then find the transaction with wallet & sub id
+                    if "method" in message:
+                        print("ACCOUNT NOTIFICATION", message)
+                        slot = message["params"]["result"]["context"]["slot"]
+                        wallet = results[message["params"]["subscription"]]
+                        find_transaction(wallet, slot)
+
+                    #if the account is a subscription, then match each wallet with the subscription id
+                    else:
+                        results[message["result"]] = wallets[message["id"]]
+                        print("Wallet", wallets[message["id"]], " subscribed. subscription id result: ", message["result"])
+
+                
 
         except websockets.ConnectionClosed as e:
             print(f"Connection closed: {e}. Retrying in 5 seconds...")
+            print("Time: " + str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
             await asyncio.sleep(5)
         except Exception as e:
             print(f"Unexpected error: {e}. Retrying in 5 seconds...")
