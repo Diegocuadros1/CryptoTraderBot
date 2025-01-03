@@ -7,7 +7,7 @@ HELIUS_API_KEY = os.getenv("HELIUS_API_KEY")
 async def find_transaction(wallet, slot):
     '''
         TODO
-        Use the slot and run an RPC call to get the block data
+        Use the slot and run an RPC call to get the transactions from wallet 
         Transaction details.
         Participating wallets.
         Instructions executed in each transaction.
@@ -31,5 +31,7 @@ async def find_transaction(wallet, slot):
 
 
     #get block data
-    info = await get_block_data(wallet, slot)
+    info = await get_block_data(wallet, slot) #a
+
+
     pass
